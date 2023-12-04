@@ -1,0 +1,195 @@
+Sub ProcessData()
+    Dim excelFilePath As String
+    Dim workbook As Workbook
+    Dim sheet As Worksheet
+    Dim data_set As Variant
+    Dim summary_dict As Object
+    Dim data As Object
+    
+    ' Excelファイルのパス
+    excelFilePath = ThisWorkbook.Path & "\test.xlsx"
+    
+    ' ワークブックを開く
+    Set workbook = Workbooks.Open(excelFilePath)
+    
+    ' シートを選択
+    Set sheet = workbook.Sheets("Sheet1")
+    
+    ' データを取得
+    data_set = GetList(sheet)
+    
+    ' サマリーを作成
+    Set summary_dict = MakeSummary(data_set)
+    
+    ' シートにデータを挿入
+    Set data = MakeData(summary_dict)
+    InsertSheet data
+    
+    ' ワークブックを保存して閉じる
+    workbook.Save
+    workbook.Close
+    
+    ' 作業が完了したらメッセージを表示
+    MsgBox "Data processing complete!", vbInformation
+End Sub
+
+Function GetList(sheet As Worksheet) As Variant
+    Dim data_set As Variant
+    Dim cell_A As Range, cell_B As Range, cell_D As Range
+    Dim lastRow As Long
+    
+    ' データの最終行を取得
+    lastRow = sheet.Cells(sheet.Rows.Count, "A").End(xlUp).Row
+    
+    ' データを配列に格納
+    ReDim data_set(1 To lastRow, 1 To 3)
+    
+    For i = 1 To lastRow
+        Set cell_A = sheet.Cells(i, 1)
+        Set cell_B = sheet.Cells(i, 3)
+        Set cell_D = sheet.Cells(i, 4)
+        
+        data_set(i, 1) = cell_A.Value
+        data_set(i, 2) = cell_B.Value
+        data_set(i, 3) = cell_D.Value
+    Next i
+    
+    GetList = data_set
+End Function
+
+Function MakeSummary(data_set As Variant) As Object
+    Dim summary_dict As Object
+    Dim key As String
+    Dim value As Double
+    
+    Set summary_dict = CreateObject("Scripting.Dictionary")
+    
+    For i = 1 To UBound(data_set, 1)
+        key = CStr(data_set(i, 1) & "_" & data_set(i, 2))
+        value = data_set(i, 3)
+        
+        If Not summary_dict.Exists(key) Then
+            summary_dict.Add key, Array(value)
+        Else
+            summary_dict(key) = ConcatArrays(summary_dict(key), value)
+        End If
+    Next i
+    
+    Set MakeSummary = summary_dict
+End Function
+
+Function ConcatArrays(arr As Variant, newValue As Variant) As Variant
+    Dim i As Long
+    Dim result As Variant
+    
+    ReDim result(1 To UBound(arr) + 1)
+    
+    For i = 1 To UBound(arr)
+        result(i) = arr(i)
+    Next i
+    
+    result(UBound(arr) + 1) = newValue
+    ConcatArrays = result
+End Function
+
+Function MakeData(summary_dict As Object) As Object
+    Dim new_summary_dict As Object
+    Dim key As Variant
+    Dim values As Variant
+    Dim chunked_values As Variant
+    Dim new_key As Variant
+    Dim i As Long
+    
+    Set new_summary_dict = CreateObject("Scripting.Dictionary")
+    
+    For Each key In summary_dict.keys
+        values = summary_dict(key)
+        chunked_values = ChunkArray(values, 20)
+        
+        For i = LBound(chunked_values) To UBound(chunked_values)
+            If i = 0 Then
+                new_key = key
+            Else
+                new_key = Array(Split(key, "_")(0) & "_" & i, Split(key, "_")(1))
+            End If
+            
+            new_summary_dict.Add CStr(new_key(0) & "_" & new_key(1)), chunked_values(i)
+        Next i
+    Next key
+    
+    Set MakeData = new_summary_dict
+End Function
+
+Function ChunkArray(arr As Variant, chunkSize As Long) As Variant
+    Dim result() As Variant
+    Dim i As Long
+    Dim chunkStart As Long
+    Dim chunkEnd As Long
+    
+    chunkStart = LBound(arr)
+    
+    Do While chunkStart <= UBound(arr)
+        chunkEnd = chunkStart + chunkSize - 1
+        If chunkEnd > UBound(arr) Then chunkEnd = UBound(arr)
+        
+        If chunkStart <= UBound(result) Then
+            ReDim Preserve result(chunkStart \ chunkSize)
+        Else
+            ReDim result(chunkStart \ chunkSize)
+        End If
+        
+        result(chunkStart \ chunkSize) = SliceArray(arr, chunkStart, chunkEnd)
+        
+        chunkStart = chunkEnd + 1
+    Loop
+    
+    ChunkArray = result
+End Function
+
+Function SliceArray(arr As Variant, startIdx As Long, endIdx As Long) As Variant
+    Dim result() As Variant
+    Dim i As Long
+    
+    ReDim result(startIdx To endIdx)
+    
+    For i = startIdx To endIdx
+        result(i) = arr(i)
+    Next i
+    
+    SliceArray = result
+End Function
+
+Sub InsertSheet(data As Object)
+    Dim excelFilePath As String
+    Dim workbook As Workbook
+    Dim activeSheet As Worksheet
+    Dim key As Variant
+    Dim values As Variant
+    Dim i As Long, j As Long
+    
+    ' Excelファイルのパス
+    excelFilePath = ThisWorkbook.Path & "\practice-vba.xlsm"
+    
+    ' ワークブックを開く
+    Set workbook = Workbooks.Open(excelFilePath)
+    
+    ' シートを選択
+    Set activeSheet = workbook.Sheets("Sheet2")
+    
+    ' データを挿入
+    For Each key In data.keys
+        values = data(key)
+        i = i + 1
+        
+        activeSheet.Cells(i, 1).Value = key(0)
+        activeSheet.Cells(i, 2).Value = key(1)
+        
+        For j = LBound(values) To UBound(values)
+            activeSheet.Cells(i, j + 3).Value = values(j)
+        Next j
+    Next key
+    
+    ' ワークブックを保存して閉じる
+    workbook.Save
+    workbook.Close
+End Sub
