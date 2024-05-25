@@ -1,119 +1,90 @@
-Sub ProcessData()
-    Dim excelFilePath As String
-    Dim workbook As Workbook
-    Dim sheet As Worksheet
-    Dim data_set As Variant
-    Dim summary_dict As Object
-    Dim sheet2 As Worksheet
-    Dim data As Object
+Sub getList()
+    Dim ws1 As Worksheet
+    Dim ws2 As Worksheet
+    Dim lastRow As Long
+    Dim dataSet As Collection
+    Dim summaryDict As Object
     Dim key As Variant
-    Dim values As Variant
-    Dim i As Long, j As Long
+    Dim value As Variant
+    Dim i As Long
+    Dim cell As Range
+    Dim chunkedValues As Collection
+    Dim j As Long
+    Dim dataDict As Object
+
+    ' Initialize the dictionary
+    Set summaryDict = CreateObject("Scripting.Dictionary")
     
-    ' ファイルパスを設定
-    excelFilePath = ThisWorkbook.Path & "\test.xlsx"
+    ' Set worksheets
+    Set ws1 = ThisWorkbook.Sheets("Sheet1")
+    Set ws2 = ThisWorkbook.Sheets("Sheet2")
     
-    ' ワークブックを読み込む
-    Set workbook = Workbooks.Open(excelFilePath)
+    ' Get the last row with data in Sheet1
+    lastRow = ws1.Cells(ws1.Rows.Count, "A").End(xlUp).Row
     
-    ' シートを選択
-    Set sheet = workbook.Sheets("Sheet1")
+    ' Read data from Sheet1 and populate dataSet
+    Set dataSet = New Collection
+    For i = 1 To lastRow
+        dataSet.Add Array(ws1.Cells(i, 1).Value, ws1.Cells(i, 3).Value, ws1.Cells(i, 4).Value)
+    Next i
     
-    ' A列とC列とD列のデータをセットで取得
-    data_set = sheet.Range("A1").CurrentRegion.Value
-    
-    ' 辞書を作成
-    Set summary_dict = CreateObject("Scripting.Dictionary")
-    
-    For i = 2 To UBound(data_set, 1)
-        key = data_set(i, 1) & "_" & data_set(i, 2)
-        If Not summary_dict.Exists(key) Then
-            summary_dict(key) = Array(data_set(i, 3))
+    ' Populate summaryDict from dataSet
+    For Each item In dataSet
+        key = Array(item(0), item(1))
+        value = item(2)
+        If Not summaryDict.Exists(key) Then
+            summaryDict.Add key, Array(value)
         Else
-            ReDim Preserve summary_dict(key)(UBound(summary_dict(key)) + 1)
-            summary_dict(key)(UBound(summary_dict(key))) = data_set(i, 3)
+            summaryDict(key) = Application.WorksheetFunction.Transpose(Application.Transpose(summaryDict(key)) & Array(value))
         End If
-    Next i
+    Next item
     
-    ' 結果を表示
-    For Each key In summary_dict.Keys
-        Debug.Print key, Join(summary_dict(key), ",")
-    Next key
+    ' Process data and write to Sheet2
+    Set dataDict = makeData(summaryDict)
     
-    ' 新しいシートを作成
-    Set sheet2 = workbook.Sheets.Add(After:=workbook.Sheets(workbook.Sheets.Count))
-    sheet2.Name = "Sheet2"
-    
-    ' データを整形
-    Set data = MakeData(summary_dict)
-    
-    ' データをシートに書き込む
-    For i = 1 To data.Count
-        key = data.Keys(i - 1)
-        values = data(key)
-        
-        sheet2.Cells(i, 1).Value = key(0)
-        sheet2.Cells(i, 2).Value = key(1)
-        
-        For j = 1 To UBound(values) + 1
-            sheet2.Cells(i, j + 2).Value = values(j - 1)
+    i = 1
+    For Each key In dataDict.Keys
+        ws2.Cells(i, 1).Value = key(0)
+        ws2.Cells(i, 2).Value = key(1)
+        chunkedValues = dataDict(key)
+        For j = 0 To UBound(chunkedValues)
+            ws2.Cells(i, j + 3).Value = chunkedValues(j)
         Next j
-    Next i
-    
-    ' ワークブックを保存して閉じる
-    workbook.Save
-    workbook.Close
+        i = i + 1
+    Next key
 End Sub
 
-Function MakeData(summary_dict_1 As Object) As Object
-    Dim new_summary_dict_1 As Object
-    Set new_summary_dict_1 = CreateObject("Scripting.Dictionary")
-    
+Function makeData(summaryDict As Object) As Object
+    Dim newSummaryDict As Object
     Dim key As Variant
     Dim values As Variant
-    Dim chunked_values As Variant
-    Dim new_key As Variant
+    Dim chunkedValues As Collection
     Dim i As Long
+    Dim chunk As Variant
+    Dim newKey As Variant
+
+    ' Initialize the dictionary
+    Set newSummaryDict = CreateObject("Scripting.Dictionary")
     
-    For Each key In summary_dict_1.Keys
-        values = summary_dict_1(key)
-        chunked_values = ChunkArray(values, 20)
+    ' Process each key in the original dictionary
+    For Each key In summaryDict.Keys
+        values = summaryDict(key)
+        Set chunkedValues = New Collection
+        For i = 1 To UBound(values) Step 20
+            chunk = Application.WorksheetFunction.Index(values, Evaluate("ROW(1:20)"))
+            chunkedValues.Add chunk
+        Next i
         
-        For i = LBound(chunked_values) To UBound(chunked_values)
-            If i = 0 Then
-                new_key = key
+        ' Create new keys and add chunks to the new dictionary
+        For i = 1 To chunkedValues.Count
+            If i = 1 Then
+                newKey = key
             Else
-                new_key = Array(key(0) & "_" & i, key(1))
+                newKey = Array(key(0) & "_" & (i - 1), key(1))
             End If
-            
-            new_summary_dict_1(new_key) = chunked_values(i)
+            newSummaryDict.Add newKey, chunkedValues(i)
         Next i
     Next key
     
-    Set MakeData = new_summary_dict_1
-End Function
-
-Function ChunkArray(arr As Variant, chunkSize As Long) As Variant
-    Dim result() As Variant
-    Dim i As Long
-    Dim startIndex As Long
-    Dim endIndex As Long
-    
-    startIndex = LBound(arr)
-    endIndex = startIndex + chunkSize - 1
-    
-    Do While startIndex <= UBound(arr)
-        If endIndex > UBound(arr) Then
-            endIndex = UBound(arr)
-        End If
-        
-        ReDim Preserve result(i)
-        result(i) = Application.Index(arr, Evaluate("row(" & startIndex + 1 & ":" & endIndex + 1 & ")"))
-        
-        startIndex = endIndex + 1
-        endIndex = startIndex + chunkSize - 1
-        i = i + 1
-    Loop
-    
-    ChunkArray = result
+    Set makeData = newSummaryDict
 End Function
