@@ -4,7 +4,8 @@ Sub getList()
     Dim lastRow As Long
     Dim dataSet As Collection
     Dim summaryDict As Object
-    Dim key As Variant
+    Dim item As Variant
+    Dim key As String
     Dim value As Variant
     Dim i As Long
     Dim cell As Range
@@ -30,12 +31,12 @@ Sub getList()
     
     ' Populate summaryDict from dataSet
     For Each item In dataSet
-        key = Array(item(0), item(1))
+        key = item(0) & "|" & item(1) ' Combine A and C values as a single string key
         value = item(2)
         If Not summaryDict.Exists(key) Then
             summaryDict.Add key, Array(value)
         Else
-            summaryDict(key) = Application.WorksheetFunction.Transpose(Application.Transpose(summaryDict(key)) & Array(value))
+            summaryDict(key) = Join(Array(summaryDict(key), value), ",")
         End If
     Next item
     
@@ -44,8 +45,10 @@ Sub getList()
     
     i = 1
     For Each key In dataDict.Keys
-        ws2.Cells(i, 1).Value = key(0)
-        ws2.Cells(i, 2).Value = key(1)
+        Dim splitKey() As String
+        splitKey = Split(key, "|")
+        ws2.Cells(i, 1).Value = splitKey(0)
+        ws2.Cells(i, 2).Value = splitKey(1)
         chunkedValues = dataDict(key)
         For j = 0 To UBound(chunkedValues)
             ws2.Cells(i, j + 3).Value = chunkedValues(j)
@@ -58,10 +61,11 @@ Function makeData(summaryDict As Object) As Object
     Dim newSummaryDict As Object
     Dim key As Variant
     Dim values As Variant
-    Dim chunkedValues As Collection
     Dim i As Long
+    Dim j As Long
     Dim chunk As Variant
-    Dim newKey As Variant
+    Dim newKey As String
+    Dim splitValues() As String
 
     ' Initialize the dictionary
     Set newSummaryDict = CreateObject("Scripting.Dictionary")
@@ -69,20 +73,16 @@ Function makeData(summaryDict As Object) As Object
     ' Process each key in the original dictionary
     For Each key In summaryDict.Keys
         values = summaryDict(key)
-        Set chunkedValues = New Collection
-        For i = 1 To UBound(values) Step 20
-            chunk = Application.WorksheetFunction.Index(values, Evaluate("ROW(1:20)"))
-            chunkedValues.Add chunk
-        Next i
-        
-        ' Create new keys and add chunks to the new dictionary
-        For i = 1 To chunkedValues.Count
-            If i = 1 Then
-                newKey = key
-            Else
-                newKey = Array(key(0) & "_" & (i - 1), key(1))
-            End If
-            newSummaryDict.Add newKey, chunkedValues(i)
+        splitValues = Split(values, ",")
+        For i = 0 To UBound(splitValues) Step 20
+            chunk = ""
+            For j = i To i + 19
+                If j > UBound(splitValues) Then Exit For
+                If chunk <> "" Then chunk = chunk & "," & splitValues(j) Else chunk = splitValues(j)
+            Next j
+            newKey = key
+            If i > 0 Then newKey = key & "_" & CStr(i \ 20)
+            newSummaryDict.Add newKey, Split(chunk, ",")
         Next i
     Next key
     
